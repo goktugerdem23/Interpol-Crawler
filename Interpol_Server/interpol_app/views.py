@@ -7,3 +7,4 @@ class ShowData(ListView):
     model = InterpolData
     template_name = "interpol_app/index.html"
     context_object_name = "wanted"
+    paginate_by = 20
