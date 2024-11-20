@@ -49,10 +49,12 @@ docker start interpol_scrapper.py
 To start consuming from rabbiMQ:
 
 First,
+
 ```bash
-docker-exec -it interpol_server
+docker-exec -it interpol_server/bin/bash
 
 Then, start the consumer script:
+
 ```bash 
 python manage.py consumer
 
