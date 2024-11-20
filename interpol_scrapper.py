@@ -15,24 +15,6 @@ import os
 count = 0
 duplicate_count = 0
 
-def sent_to_file(message):
-    file_path = "data.json"
-    data = []
-    
-    
-    if os.path.exists(file_path):
-        with open(file_path, "r") as file:
-            try:
-                data = json.load(file)
-            except json.JSONDecodeError:
-                data = []
-
-    
-    data.append(json.loads(message))
-    with open(file_path, "w") as file:
-        json.dump(data, file, indent=4)
-    
-    print(f"{message} has been saved to JSON file")
 
     
 
@@ -66,7 +48,7 @@ def send_to_rabbitMQ(message):
 
 
 def generate_regex_patterns():
-    letters = [chr(i) for i in range(ord('A'), ord('Z') + 1)]  # A'dan Z'ye harfler
+    letters = [chr(i) for i in range(ord('A'), ord('Z') + 1)]  
     patterns = []
     for first in letters:
         for second in letters:
@@ -106,7 +88,7 @@ def scrape_interpol_data(driver):
                 }
                 data_json = json.dumps(data)
                 print(data)
-                sent_to_file(data_json)
+                # sent_to_file(data_json)
                 send_to_rabbitMQ(data_json)
 
         except Exception as e:
@@ -130,12 +112,15 @@ def click_next_button(driver):
 
 
 def main():
-    # chrome_options = Options()
-    # chrome_options.add_argument("--disable-extensions")
-    # chrome_options.add_argument("--start-maximized")
+    chrome_options = Options()
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.add_argument("--start-maximized")
 
     url = "https://www.interpol.int/en/How-we-work/Notices/Red-Notices/View-Red-Notices"
-    driver = webdriver.Chrome()
+    driver = webdriver.Remote(
+        command_executor="http://selenium:4444/wd/hub",
+        options=chrome_options
+    )
     driver.get(url)
 
     regex_patterns = generate_regex_patterns()
