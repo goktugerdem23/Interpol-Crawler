@@ -47,6 +47,7 @@ To start scrabbing from website:
 docker start interpol_scrapper.py 
 
 To start consuming from rabbiMQ:
+
 First,
 ```bash
 docker-exec -it interpol_server
