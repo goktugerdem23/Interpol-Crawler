@@ -185,6 +185,6 @@ def main():
     print(f"Total duplicates: {duplicate_count}")
     driver.quit()
 
-# Run the main function when the script is executed
+
 if __name__ == "__main__":
     main()
