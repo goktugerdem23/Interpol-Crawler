@@ -10,8 +10,7 @@ import requests
 import pika
 import time
 import json
-import os
-
+import re
 # Global counters for unique and duplicate records
 count = 0
 duplicate_count = 0
@@ -74,18 +73,25 @@ def scrape_interpol_data(driver):
     for person in wanted:
         try:
             # Extract person's details
-            name = person.find('a').text.strip()
-            age = person.find_next('span', class_='age').text.strip()
+            name_tags = person.find('a').contents  # Get all contents under the <a> tag
+            if len(name_tags) >= 2:
+                family_name = name_tags[0].strip()  # Upper part of the name (Family Name)
+                forename = name_tags[2].strip()  # Lower part of the name (Forename)
+            else:
+                continue
+
+            age_text = person.find_next('span', class_='age').text.strip()
+            age = int(re.search(r'\d+', age_text).group())
             nationality = person.find_next('span', class_='nationalities').text.strip()
             img_tag = person.find('img')
             img_url = img_tag['src'] if img_tag else None
 
             # Skip if any essential detail is missing
-            if not (name and age and nationality):
+            if not (family_name and forename and age and nationality):
                 continue
 
             # Create a unique key based on name, age, and nationality
-            unique_key = (name, age, nationality)
+            unique_key = (forename, family_name, age, nationality)
             if unique_key in unique_data:
                 duplicate_count += 1
             else:
@@ -94,9 +100,10 @@ def scrape_interpol_data(driver):
                 
                 # Prepare the data as a JSON object
                 data = {
-                    "Name": name,
-                    "Age": age,
-                    "Nationality": nationality,
+                    "family_name": family_name,
+                    "forename": forename,
+                    "age": age,
+                    "nationality": nationality,
                     "img_url": img_url
                 }
                 data_json = json.dumps(data)
