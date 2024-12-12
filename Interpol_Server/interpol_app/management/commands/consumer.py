@@ -2,112 +2,108 @@ import json
 import pika
 from django.core.management.base import BaseCommand
 from interpol_app.models import InterpolData
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Command(BaseCommand):
     help = 'Consume data from RabbitMQ and sync database with Interpol updates'
 
     def handle(self, *args, **kwargs):
-        # Establishing connection to the RabbitMQ server
         connection_parameters = pika.ConnectionParameters('rabbitmq')
-        connection = pika.BlockingConnection(connection_parameters)
-        channel = connection.channel()
-        
-        # Declare a queue named 'interpol-data' if it doesn't already exist
-        channel.queue_declare(queue='interpol-data')
 
-        # Define the callback function to process messages from the queue
-        def callback(ch, method, properties, body):
-            try:
-                # Parse the incoming message as JSON
-                data = json.loads(body)
+        with pika.BlockingConnection(connection_parameters) as connection:
+            channel = connection.channel()
 
-                # Check if a record with the same family_name and forename already exists in the database
-                existing_record = InterpolData.objects.filter(
-                    family_name=data["family_name"], 
-                    forename=data["forename"]
-                ).first()
+            # Declare queue if not exists
+            channel.queue_declare(queue='interpol-data')
 
-                if existing_record:
-                    # If the record exists, update its fields with new data
-                    existing_record.age = data["age"]
-                    existing_record.nationality = data["nationality"]
-                    existing_record.img_url = data["img_url"]
-                    existing_record.save()
+            # Callback for consuming messages
+            def callback(ch, method, properties, body):
+                try:
+                    data = json.loads(body)
+                    self.process_message(data)
+                    ch.basic_ack(delivery_tag=method.delivery_tag)
+                except Exception as e:
+                    logger.error(f"Error processing message: {e}")
+                    self.stdout.write(self.style.ERROR(f"Error processing message: {e}"))
 
-                    # Log a success message for the updated record
-                    self.stdout.write(self.style.SUCCESS(
-                        f"Updated existing record: {data['family_name']} {data['forename']}"
-                    ))
-                else:
-                    # If the record doesn't exist, create a new one
-                    InterpolData.objects.create(
-                        family_name=data["family_name"],
-                        forename=data["forename"],
-                        age=data["age"],
-                        nationality=data["nationality"],
-                        img_url=data["img_url"]
-                    )
+            # Start consuming
+            self.stdout.write(self.style.NOTICE('Listening...'))
+            channel.basic_consume(queue='interpol-data', on_message_callback=callback)
+            channel.start_consuming()
 
-                    # Log a success message for the new record
-                    self.stdout.write(self.style.SUCCESS(
-                        f"Added new record: {data['family_name']} {data['forename']}"
-                    ))
+    def process_message(self, data):
+        existing_record = InterpolData.objects.filter(
+            family_name=data["family_name"], forename=data["forename"]
+        ).first()
 
-            except Exception as e:
-                # Log an error if message processing fails
-                self.stdout.write(self.style.ERROR(f"Error processing message: {e}"))
+        if existing_record:
+            existing_record.age = data["age"]
+            existing_record.nationality = data["nationality"]
+            existing_record.img_url = data["img_url"]
+            existing_record.save()
 
-        # Start consuming messages from the queue, calling the callback function for each
-        channel.basic_consume(queue='interpol-data', on_message_callback=callback, auto_ack=True)
-        
-        # Log a message indicating that the script is waiting for messages
-        self.stdout.write(self.style.NOTICE('Waiting for messages...'))
-        channel.start_consuming()
+            self.stdout.write(self.style.SUCCESS(
+                f"Updated existing record: {data['family_name']} {data['forename']}"
+            ))
+        else:
+            InterpolData.objects.create(
+                family_name=data["family_name"],
+                forename=data["forename"],
+                age=data["age"],
+                nationality=data["nationality"],
+                img_url=data["img_url"]
+            )
+            self.stdout.write(self.style.SUCCESS(
+                f"Added new record: {data['family_name']} {data['forename']}"
+            ))
 
     def check_for_removed_records(self):
-        # Get the set of (family_name, forename) tuples currently in the database
-        current_records_in_db = set(InterpolData.objects.values_list("family_name", "forename"))
+        current_records_in_db = self.get_current_interpol_records()
 
-        # Get the set of (family_name, forename) tuples currently present in RabbitMQ
-        records_from_last_sync = self.get_current_interpol_records()
-
-        # Identify records in the database but not in the latest Interpol updates
-        removed_records = current_records_in_db - records_from_last_sync
+        records_from_last_sycn = self.fetch_rabbitmq_records()
+        removed_records = current_records_in_db - records_from_last_sycn
 
         if removed_records:
-            # Log a warning for records that are being removed
             self.stdout.write(self.style.WARNING(
-                f"Removed records detected: {', '.join([f'{r[0]} {r[1]}' for r in removed_records])}"
+                f"Removed record detected: {', '.join([f''])}"
             ))
-            # Delete the removed records from the database
-            InterpolData.objects.filter(
-                family_name__in=[r[0] for r in removed_records],
-                forename__in=[r[1] for r in removed_records]
-            ).delete()
-            self.stdout.write(self.style.SUCCESS("Removed records have been deleted."))
+        else:
+            self.stdout.write(self.style.SUCCESS("No removed records detected"))
+      
 
     def get_current_interpol_records(self):
-        # Establish a connection to RabbitMQ
-        connection_parameters = pika.ConnectionParameters('rabbitmq')
-        connection = pika.BlockingConnection(connection_parameters)
-        channel = connection.channel()
-        
-        # Declare the 'interpol-data' queue if it doesn't exist
-        channel.queue_declare(queue='interpol-data')
-        
-        # Set to store unique (family_name, forename) tuples from RabbitMQ messages
-        current_records = set()
-        
-        # Consume messages from the queue without waiting (basic_get)
-        method_frame, _, body = channel.basic_get(queue='interpol-data', auto_ack=True)
-        while method_frame:
-            # Parse each message as JSON and add the tuple to the set
-            data = json.loads(body)
-            if "family_name" in data and "forename" in data:
-                current_records.add((data["family_name"], data["forename"]))
-            # Get the next message from the queue
-            method_frame, _, body = channel.basic_get(queue='interpol-data', auto_ack=True)
+        return set(
+            InterpolData.objects.values_list("family_name","forename")
+        )
+    
 
-        # Close the connection to RabbitMQ
-        connection.close()
+
+    def fetch_rabbitmq_records(self):
+        connection_parameters = pika.ConnectionParameters('rabbitmq')
+        current_records = set()
+
+        with pika.BlockingConnection(connection_parameters) as connection:
+            channel = connection.channel()
+            channel.queue_declare(queue='interpol-data')
+
+            while True:
+                method_frame, _, body = channel.basic_get(queue='interpol-data', auto_ack=True)
+                if not method_frame:
+                    break
+
+                try:
+                    data = json.loads(body)
+                    if "family_name" in data and "forename" in data:
+                        current_records.add((data["family_name"], data["forename"]))
+                except json.JSONDecodeError:
+                    self.stdout.write(self.style.ERROR("Failed to decode RabbitMQ message as JSON"))
+
         return current_records
+
+        
+
+   
+
+    
