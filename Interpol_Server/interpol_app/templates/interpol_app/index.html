@@ -61,6 +61,16 @@
 
   </head>
   <body>
+
+<div class="container">
+    <form action="{%url 'interpol_app:search'%}" method="get">
+        <input type="text"name = 'q',value = "{{query}}" placeholder="Search red notices..">
+        <button type="submit">Search</button>
+    </form>
+</div>
+
+
+
     <div class="container">
       <div class="row">
         {% for person in wanted %}
@@ -68,7 +78,8 @@
           <div class="card" style="width: 18rem">
             <img src="{{ person.img_url }}" class="card-img-top" alt="..." />
             <div class="card-body">
-              <h5 class="card-title">Name: {{ person.name }}</h5>
+              <h5 class="card-title">Family Name: {{ person.family_name }}</h5>
+              <h5 class="card-title">Forname: {{ person.forename }}</h5>
               <p class="card-text">Age: {{ person.age }}</p>
               <p class="card-text">Nationality: {{ person.nationality }}</p>
               
