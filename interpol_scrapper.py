@@ -107,7 +107,7 @@ def scrape_interpol_data(driver):
                     "img_url": img_url
                 }
                 data_json = json.dumps(data)
-                print(data)
+                # print(data)
                 
                 # Send the data to RabbitMQ
                 send_to_rabbitMQ(data_json)
